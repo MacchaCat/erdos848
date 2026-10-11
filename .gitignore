@@ -1,0 +1,5 @@
+# build products
+Erdos848/.lake/
+__pycache__/
+*.bin
+*.bin.zst

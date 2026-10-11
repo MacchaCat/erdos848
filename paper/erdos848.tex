@@ -1,0 +1,529 @@
+\documentclass[11pt]{amsart}
+
+\usepackage[margin=1.1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+\usepackage{alltt}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\emergencystretch=2em
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\Mid}{\mathrm{Mid}}
+\newcommand{\Ex}{\mathrm{Ex}}
+\newcommand{\Sh}{\mathrm{Sh}}
+\newcommand{\lean}[1]{\texttt{#1}}
+
+\title[Erd\H{o}s Problem \#848]{Erd\H{o}s Problem \#848: an explicit sieve proof\\ and a kernel-checked Lean formalisation}
+\author{macchacat}
+\date{October 2026}
+
+
+\begin{document}
+
+\begin{abstract}
+Let $A\subseteq\{1,\dots,N\}$ be such that $ab+1$ is not squarefree for all
+$a,b\in A$ (with $a=b$ allowed). We give a proof that
+$|A|\le\lfloor (N+18)/25\rfloor$ for every $N\ge1$, the number of $n\le N$ with
+$n\equiv7\pmod{25}$; the bound is attained by that residue class. Sawhney proved
+this for all sufficiently large $N$ without an explicit threshold, and Li gave the
+first complete proof for all $N$, with a Lean formalisation. Our argument is
+independent of Li's: we make every error term in Sawhney's sieve argument explicit,
+strengthen the lemmas so that the analytic part covers all
+$N\ge 6\times10^5$, and treat the remaining range by a colouring of the graph of
+compatible integers. The whole theorem is formalised in Lean~4 with Mathlib. Every
+computation is evaluated by the Lean kernel (\texttt{decide +kernel}); no
+\texttt{native\_decide} is used, and the only axioms are \texttt{propext},
+\texttt{Classical.choice} and \texttt{Quot.sound}. The kernel checks take about five
+CPU hours and at most $9.3$~GB of memory per module.
+\end{abstract}
+
+\maketitle
+
+\section{Introduction}
+
+For a positive integer $N$ call a set $A\subseteq\{1,\dots,N\}$
+\emph{admissible} if $ab+1$ is not squarefree for all $a,b\in A$, where $a=b$ is
+allowed. Since $7\cdot7+1=50$ and $25\mid ab+1$ whenever
+$a\equiv b\equiv7\pmod{25}$, the set
+\[
+  C_7(N)=\{n\le N:\ n\equiv7\pmod{25}\},\qquad
+  c_7(N):=|C_7(N)|=\Big\lfloor\frac{N+18}{25}\Big\rfloor ,
+\]
+is admissible. Erd\H{o}s and S\'ark\"ozy asked whether this is extremal; this is
+Problem \#848 on the Erd\H{o}s problems site~\cite{EP848}.
+
+\begin{theorem}\label{thm:main}
+For every $N\ge1$, every admissible $A\subseteq\{1,\dots,N\}$ satisfies
+$|A|\le c_7(N)$. Hence the maximum size of an admissible set is exactly $c_7(N)$.
+\end{theorem}
+
+\subsection*{Prior work}
+Sawhney~\cite{Sawhney} proved Theorem~\ref{thm:main} for all sufficiently large
+$N$, without an explicit threshold (see also~\cite[\S IV.1]{AI2511}). The first
+proof for \emph{all} $N$ is due to Li~\cite{Li,LiRepo}, who reduces the extremal
+problem by a Hall-type equivalence to a completion inequality relative to the
+progression $7\pmod{25}$, controls $N\le5\times10^6$ by a prefix-compatible
+colouring, and formalises the complete theorem in Lean~4. The present work was
+carried out independently and follows a different route: Sawhney's sieve
+framework, made fully explicit.
+
+\subsection*{This paper}
+\begin{enumerate}[leftmargin=*]
+\item \emph{An explicit sieve argument} (Sections~\ref{sec:notation}--\ref{sec:large}).
+  Every error term in Sawhney's argument is made explicit (Lemmas~A$'$, B, C), with a
+  refined case analysis in which each witness pays the large-prime error only once.
+  Interval certificates in exact rational arithmetic and a tail estimate prove the
+  bound for all $N\ge1.6\times10^8$.
+\item \emph{Strengthened lemmas} (Section~\ref{sec:strong}). Sharper bounds for the
+  large-prime set (a periodic discrepancy estimate), a Pell-type bound counted in a
+  window, Bonferroni truncation, and minimal witnesses lower the analytic threshold
+  to $6\times10^5$.
+\item \emph{Small $N$} (Section~\ref{sec:small}). For small $N$ we exhibit a
+  partition of the vertex set into $c_7(N)$ independent sets of the
+  ``compatibility'' graph, built incrementally and replayed by an independent
+  checker; this is done up to $N=4\times10^8$ in C\texttt{++}.
+\item \emph{A kernel-checked formalisation} (Section~\ref{sec:lean}). The whole
+  theorem is proved in Lean~4 with Mathlib. All computations are evaluated by the
+  kernel, so neither the Lean compiler nor any external program is trusted.
+  Untrusted programs only produce certificates; the kernel checks them, and the
+  soundness of every checker is proved in Lean.
+\end{enumerate}
+
+\section{Notation and basic facts}\label{sec:notation}
+
+If $a\in A$ then $a^2+1$ is not squarefree. If $p^2\mid a^2+1$ then $p\ne2$ (as
+$a^2+1\not\equiv0\pmod4$) and $-1$ is a square mod $p$, so $p\equiv1\pmod4$.
+
+Write $A_7=A\cap(7+25\Z)$, $A_{18}=A\cap(18+25\Z)$ and
+$A^*=A\setminus(A_7\cup A_{18})$. A \emph{U1 prime} is a prime $p\equiv1\pmod4$
+with $p\ge13$. For a U1 prime $p$ let $\pm r_p$ be the two solutions of
+$x^2\equiv-1\pmod{p^2}$ and $R_p=\{x: x\equiv\pm r_p\pmod{p^2}\}$. An integer $a$
+is \emph{compatible} with $b$ if $\mu(ab+1)=0$.
+
+\begin{enumerate}[label=(F\arabic*),leftmargin=*]
+\item If $x\in A^*$, then $p^2\mid x^2+1$ for some U1 prime $p$, because
+  $25\mid x^2+1$ iff $x\equiv\pm7\pmod{25}$.
+\item If $a\in A_7\cup A_{18}$ and $b\in A^*$, then $25\nmid ab+1$.
+\item If $a\in A_7$ and $b\in A_{18}$, then $25\nmid ab+1$, since $7\cdot18+1=127$.
+\item If $a,b$ are odd, then $4\mid ab+1$ iff $a\not\equiv b\pmod4$; if $a$ or $b$
+  is even, $ab+1$ is odd.
+\item If $p\nmid b$, then $p^2\mid ab+1$ iff $a\equiv c_p(b):=-b^{-1}\pmod{p^2}$.
+  For a U1 prime $p$, $c_p(b)\equiv\pm r_p$ iff $b\equiv\pm r_p$.
+\item $\rho^*(b):=\max_{(c,b)=1}\#\{s\bmod b: s^2\equiv c\}\le
+  2^{\omega_{\mathrm{odd}}(b)}\cdot\{1,2,4\}$, the last factor according as
+  $v_2(b)\le1$, $=2$, $\ge3$.
+\end{enumerate}
+
+\section{Sieve lemmas}\label{sec:sieve}
+
+\subsection{Lemma A$'$: one witness, shared sets}
+Fix a \emph{witness} $1\le b\le N$ and parameters $5\le z\le p_c<Y$. Define
+\[
+  \Mid(b)=\{a\le N:\exists p\in(p_c,Y],\ p\nmid b,\ p^2\mid ab+1\},\qquad
+  \Ex(b)=\{a\le N:\exists p>Y,\ p^2\mid ab+1\}.
+\]
+
+\begin{lemma}[A$'$]\label{lem:A}
+\begin{enumerate}[label=(\roman*)]
+\item $|\Mid(b)|\le\sum_{p_c<p\le Y}(N/p^2+1)$.
+\item $|\Ex(b)|\le\rho^*(b)\big(2(N+1)/Y+(Nb+1)/Y^2\big)$.
+\item Let every prime factor $p$ of $q$ satisfy $p^2\mid q$, let $T$ be a set of
+  classes mod $q$ with $p^2\nmid tb+1$ for all $t\in T$, $p\mid q$; let
+  $\mathcal P=\{p\nmid qb\}$ and $k=\#\{p\in\mathcal P: p\le z\}$. With
+  $S=\{a\le N: a\bmod q\in T\}$,
+  \begin{multline*}
+  \#\{a\in S:\ a\text{ compatible with }b\}\le
+  |T|\Big[\frac Nq\Big(1-\prod_{p\in\mathcal P,\,p\le z}\Big(1-\frac1{p^2}\Big)\Big)+2^k-1\Big]\\
+  +\sum_{\substack{z<p\le p_c\\ p\in\mathcal P}}|T|\Big(\frac N{qp^2}+1\Big)
+  +|\Mid(b)\cap S|+|\Ex(b)\cap S|.
+  \end{multline*}
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+If $a$ is compatible with $b$, pick $p$ with $p^2\mid ab+1$; then $p\nmid b$, and
+$p\nmid q$ since otherwise $ab+1\equiv tb+1\not\equiv0\pmod{p^2}$. Primes $p\le z$
+are handled by inclusion--exclusion in each class $t$ (error $\le2^k-1$); primes
+$z<p\le p_c$ by counting one class mod $qp^2$; primes $p_c<p\le Y$ give $\Mid(b)$,
+and each contributes at most $N/p^2+1$ values of $a$ by (F5). For $p>Y$ write
+$ab+1=p^2m$ with $m\le M=\lfloor(Nb+1)/Y^2\rfloor$; $a$ is determined by $(p,m)$,
+the congruence $p^2m\equiv1\pmod b$ puts $p$ into at most $\rho^*(b)$ classes mod
+$b$, and $p\le\sqrt{(Nb+1)/m}$. Summing over $m$ gives (ii).
+\end{proof}
+
+The key point is that when one witness $b$ sieves several disjoint parts of $A$,
+the contributions of $\Mid(b)$ and $\Ex(b)$ add up to at most
+$\Sigma(b):=|\Mid(b)|+|\Ex(b)|$: each witness pays the large-prime error once.
+
+\subsection{Lemma B: sets of type $A^*$}
+\begin{lemma}[B]\label{lem:B}
+Let $q\in\{25,50,100\}$, $T$ a set of $\tau$ classes mod $q$,
+$13\le z_B\le p_B\le Y'$ and $k=\#\{\text{U1 primes}\le z_B\}$. Then
+$\#\{n\le N: n\bmod q\in T,\ \exists\,\text{U1 }p,\ p^2\mid n^2+1\}$ is at most
+\begin{multline*}
+\tau\Big[\frac Nq\Big(1-\prod_{\text{U1},\,p\le z_B}\Big(1-\frac2{p^2}\Big)\Big)+3^k-1\Big]
++\sum_{\text{U1},\,z_B<p\le p_B}2\tau\Big(\frac N{qp^2}+1\Big)\\
++\sum_{\text{U1},\,p_B<p\le Y'}2\Big(\frac N{p^2}+1\Big)
++\Big\lfloor\frac{N^2+1}{Y'^2}\Big\rfloor\big(\log_3 N+1\big).
+\end{multline*}
+\end{lemma}
+
+\begin{proof}
+Small primes by inclusion--exclusion over the disjoint classes $\pm r_p$; medium
+primes directly. For $p>Y'$ write $n^2+1=p^2m$, so $(n,p)$ solves
+$x^2-my^2=-1$. If $x_1<x_2$ are two solutions then
+$x_2+y_2\sqrt m=(x_1+y_1\sqrt m)(a+c\sqrt m)$ with $a^2-mc^2=1$, $a,c\ge1$, and
+$x_2\ge ax_1\ge3x_1$ unless $m=3$, which is impossible ($3\nmid n^2+1$). Hence each
+$m$ contributes at most $\log_3N+1$ values of $n$.
+\end{proof}
+
+(The original form of the Pell term uses the fundamental unit, with coefficient
+$1/(2\log(1+\sqrt2))$; the elementary bound above is the one formalised.)
+
+\subsection{Lemma C: sieving $A^*$ by an even witness}
+Let $b\in A^*$ be even and $T_{25}$ the 23 classes mod 25 other than 7 and 18. For
+$x\in A^*$ either $x=b$ or some odd prime $p_2\nmid b$ has $p_2^2\mid xb+1$, and by
+(F1) $x\in R_{p_1}$ for a U1 prime $p_1$. Writing $C_p=\{x\equiv c_p(b)\pmod{p^2}\}$,
+$U_1^{\le z_1}=\bigcup_{\text{U1},\,p\le z_1}R_p$ and similarly $U_1^{>z_1}$,
+\begin{equation}\label{eq:C}
+|A^*|\le|T_{25}\cap U_1^{>z_1}|+\sum_{\substack{p_2\le z_2\\ p_2\text{ odd}}}
+\big|T_{25}\cap U_1^{\le z_1}\cap C_{p_2}\big|
++\sum_{z_2<p_2\le p_c}\Big(\frac N{p_2^2}+1\Big)+|\Mid(b)\cap A^*|+|\Ex(b)\cap A^*|.
+\end{equation}
+Let $\mathcal U$ be the U1 primes $\le z_1$, $k_1=|\mathcal U|$ and
+$P=\prod_{q\in\mathcal U}(1-2/q^2)$. Each term of \eqref{eq:C} is bounded
+explicitly: the first by Lemma~\ref{lem:B} with $q=25$, $\tau=23$; the term
+$p_2=5$ by $\frac N{25}(1-P)+3^{k_1}$ (it is one whole class mod 25, inside
+$T_{25}$); an odd $p_2$ that is neither 5 nor a U1 prime by
+$\frac{23}{25}\frac N{p_2^2}(1-P)+3\cdot3^{k_1}$; a U1 prime $p_2$ with
+$b\in R_{p_2}$ by $\mathrm{whole}(p_2)=\frac{23}{25}\frac N{p_2^2}+3$; and a U1
+prime with $b\notin R_{p_2}$ by
+$\mathrm{non}(p_2)=\frac{23}{25}\frac N{p_2^2}(1-\mathrm{pr}_{p_2})+3\cdot3^{k'_{p_2}}$,
+where $\mathrm{pr}_p=\prod_{q\in\mathcal U\setminus\{p\}}(1-2/q^2)$ and
+$k'_p=|\mathcal U\setminus\{p\}|$.
+
+The set $S_b=\{\text{U1 }p: b\in R_p\}$ is not known, so we bound its worst case.
+Let $q_1=13<q_2=17<q_3=29<\cdots$ be the U1 primes and $g(p)=\mathrm{whole}(p)-\mathrm{non}(p)$.
+
+\begin{lemma}[C1, C2]
+$g$ is strictly decreasing on U1 primes. If
+$L=\max\{\ell: q_1\cdots q_\ell\le\sqrt{N^2+1}\}$, then for every even $b\le N$
+\[
+\sum_{p\in S_b,\ p\le z_2}g(p)\le\sum_{j\le L,\ q_j\le z_2}\max(g(q_j),0).
+\]
+\end{lemma}
+
+\begin{proof}
+The monotonicity follows from the explicit form of $g$ on either side of $z_1$.
+For the second claim, the primes of $S_b$ are distinct and $p^2\mid b^2+1$ for each,
+so $\prod_{p\in S_b}p\le\sqrt{N^2+1}$; the $j$-th smallest element of $S_b$ is
+$\ge q_j$, so $|S_b|\le L$ and $g(s_j)\le g(q_j)$.
+\end{proof}
+
+\section{Case analysis}\label{sec:cases}
+Write $R(T,q;\mathrm{excl})$ for the terms of Lemma~\ref{lem:A}(iii) other than
+$\Mid$ and $\Ex$, in the worst case $\mathcal P=$ all primes outside
+$\mathrm{excl}$, and $B(\tau,q)$ for the bound of Lemma~\ref{lem:B}. ``Lemma C''
+denotes \eqref{eq:C} without its last two terms; together with the shared part of
+$A_7\cup A_{18}$ for the same witness, those terms are bounded by $\Sigma(b)$.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}l >{\raggedright\arraybackslash}p{4.2cm} >{\raggedright\arraybackslash}p{9.2cm}@{}}
+\toprule
+Case & Condition & Upper bound\\
+\midrule
+I.a & $A^*=\emptyset$, $A_7$ or $A_{18}$ empty & $c_7(N)$\\
+I.b & $A^*=\emptyset$, $b\in A_7$, $b'\in A_{18}$ & $R(\{18\},25;\{5\})+\Sigma(b)+R(\{7\},25;\{5\})+\Sigma(b')$\\
+II & $A^*$ has an even element $b$ & $R(\{7,18\},25;\{2,5\})+\Sigma(b)+\text{Lemma C}$\\
+III.1 & $A^*$ odd, with $b_1\equiv1$, $b_3\equiv3\pmod4$ & $R(6\text{ cl.},100)+\Sigma(b_1)+R(2\text{ cl.},100)+\Sigma(b_3)+B(23,50)$\\
+III.2.a & $A^*$ in one class mod 4, $A_7\cup A_{18}$ odd & $2(N/100+1)+R(2\text{ cl.},100)+\Sigma(b)+B(23,100)$\\
+III.2.b & as III.2.a, but $A_7\cup A_{18}$ has an even $b'$ & $(N/100+1)+R(3\text{ cl.},100)+\Sigma(b)+R(4\text{ cl.},100)+\Sigma(b')+B(23,100)$\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The main coefficients (times 25) are $0.741$, $0.784$, $0.632$, $0.739$, $0.686$
+for I.b, II, III.1, III.2.a, III.2.b; all are $<1$. The cases are exhaustive, and
+the residue conditions used are consequences of (F2)--(F4). For instance in III.1,
+$b_1$ sieves the classes $57,93,32,82,18,68\pmod{100}$ of $A_7\cup A_{18}$ and
+$b_3$ the classes $7,43$; in each of them $4\nmid tb+1$ and $25\nmid tb+1$, so
+$\{2,5\}$ may be excluded.
+
+\section{Large $N$: interval certificates}\label{sec:large}
+
+\begin{lemma}[D]\label{lem:D}
+Fix parameters on an interval $[N_{lo},N_{hi}]$. Suppose that for every case and
+every integer $N$ in the interval the bound has the form $C N+E(N)$ with
+$E$ nondecreasing. If $C<1/25$ and $CN_{lo}+E(N_{hi})<(N_{lo}-6)/25$, then
+$|A|<(N-6)/25\le c_7(N)$ for every integer $N\in[N_{lo},N_{hi}]$.
+\end{lemma}
+
+\begin{proof}
+$(N-6)/25-CN$ is increasing, and $c_7(N)\ge(N+18-24)/25$.
+\end{proof}
+
+The parameters ($z$, $p_c$, $Y$, $Y'_q$, $p_{B,q}$, $z_B$, $z_1$, $z_2$, $L$) are
+chosen by a floating-point optimiser; since every choice gives a valid bound, they
+need no verification. The bounds are then recomputed in exact rational arithmetic:
+$\sum1/p^2$ by integer sums of $\lceil K/p^2\rceil$ up to $2\times10^7$ and
+$\sum_{n>P}1/n^2\le1/P$ beyond, $\pi(x)$ exactly up to $2\times10^7$ and by an
+explicit upper bound above (in the formalised version, Chebyshev's bound
+$\theta(x)\le x\log4$, which is in Mathlib), and logarithms by rational bounds in the
+safe direction. In the formalised version, $2913$ intervals with integer endpoints
+cover $[1.6\times10^8,10^{60}]$, with worst ratio $0.9891$ (the ratio of the
+bound to $(N_{lo}-6)/25$).
+
+For $N\ge10^{60}$ the parameters are fixed functions of $N$ (for instance
+$Y=N^{0.7}$ and $p_c=p_B=2000$), $\rho^*(b)\le2N^{0.195}$ by Robin's bound on
+$\omega(n)$, and $C$ is constant. Each term of $E(N)/N$ has the form
+$aN^{\alpha-1}(\log N)^\gamma$ with $\alpha\le0.8$ and is decreasing for
+$N\ge10^{60}$; at $N=10^{60}$ the ratios are at most $0.826$ in every case. The
+formalised tail uses $t=\lfloor N^{1/4}\rfloor$, $Y=\lfloor N/t\rfloor$ and the
+bound $\rho(b)^5\cdot(3\cdot5\cdots31)\le1024\cdot32^{10}\,b$, valid for all $b$,
+instead of Robin's inequality. This proves Theorem~\ref{thm:main} for
+$N\ge1.6\times10^8$.
+
+\section{Strengthened lemmas: the analytic part from $6\times10^5$}\label{sec:strong}
+
+\subsection{The large-prime set}
+Fix a witness $b$ and $Y>p_c$; put $M=\lfloor(Nb+1)/Y^2\rfloor$,
+$X_m=\sqrt{(Nb+1)/m}$ and $r_b(m)=\#\{s\bmod b: s^2m\equiv1\pmod b\}$.
+
+\begin{lemma}[E]\label{lem:E}
+\begin{enumerate}[label=(E\arabic*),start=0]
+\item $|\Ex(b)|\le\sum_{m\le M}r_b(m)\big(\lfloor(X_m-Y)/b\rfloor+1\big)$.
+\item $\sum_{m\le M}\big((X_m-Y)/b+1\big)\le(N+1)/Y+M$; hence
+  $|\Ex(b)|\le\rho^*(b)\big((N+1)/Y+M\big)$.
+\item Let $e=\min(v_2(b),3)$, $Q$ a set of odd primes dividing $b$, $P=2^e\prod Q$,
+  $g_P=r_P$, $\alpha_P=\varphi(P)/P$ and
+  $\beta_P=\max_{0\le R<P}\big(\sum_{m\le R}g_P(m)-\alpha_PR\big)$. Then
+  \[
+  |\Ex(b)|\le2^{\omega_{\mathrm{odd}}(b)-|Q|}\Big[\alpha_P\Big(\frac{N+1}Y+M\Big)
+  +\beta_P\Big(\frac{\sqrt{Nb+1}}b+1\Big)\Big].
+  \]
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}[Sketch]
+(E0) $a\mapsto(p,m)$ with $ab+1=p^2m$ is injective and $p$ lies in $r_b(m)$ classes
+mod $b$ in $(Y,X_m]$. (E1) follows from $\sum_{m\le M}m^{-1/2}\le2\sqrt M-1$ and
+$(K-\sqrt M)^2\ge0$ with $K=\sqrt{Nb+1}/Y$. For (E2), $r_b\le2^{\omega_{\rm odd}(b)-|Q|}g_P$
+by the Chinese remainder theorem; $\sum_{m\bmod P}g_P(m)=\varphi(P)$, so
+$G(R)=\sum_{m\le R}g_P(m)\le\alpha_PR+\beta_P$; Abel summation against the
+nonincreasing $f(m)=\lfloor(X_m-Y)/b\rfloor+1$ and (E1) finish the proof.
+\end{proof}
+
+To use (E2) uniformly over unknown witnesses, a witness $b\le x$ is described by
+its \emph{structure} $(e,S,u)$: $e=\min(v_2(b),3)$, $S$ the small odd primes
+dividing $b$, $u$ the number of larger odd prime factors. Each structure has a
+least possible value $b_{\min}$, and the bound is maximised over the structures
+with $b_{\min}\le x$, using the table of $(P,\varphi(P),P\beta_P)$.
+
+\begin{lemma}[M]
+A class mod $p^2$ with $p>\sqrt N$ has at most one element in $[1,N]$, so
+$|\Mid(b)|\le\sum_{p_c<p\le\min(Y,\sqrt N)}(N/p^2+1)+\#\{p:\max(p_c,\sqrt N)<p\le Y\}$.
+\end{lemma}
+
+\subsection{The U1 tail}
+\begin{lemma}[H]
+For a U1 prime $p$, $\#\{n\le N: p^2\mid n^2+1\}\le2(N/p^2+1)$; it is $\le2$ if
+$p^2>N$ and $\le1$ if $p^2>2N$.
+\end{lemma}
+
+\begin{lemma}[P]
+Let $Y_q\ge5$, $M=\lfloor(N^2+1)/Y_q^2\rfloor$, and call $m$ \emph{admissible} if
+$m\bmod8\in\{1,2,5\}$ and $3,7,11,19,23\nmid m$. Then
+\[
+\#\{n\le N:\exists\,p\ge Y_q,\ p^2\mid n^2+1\}\le\sum_{\substack{m\le M\\ m\text{ admissible}}}
+\Big(1+\Big\lfloor\frac{\log(N/x_m)}{\log g_m}\Big\rfloor_+\Big),
+\]
+where $x_m=\sqrt{mY_q^2-1}$ and $g_m=\max(3,2\sqrt m)$.
+\end{lemma}
+
+\begin{proof}
+With $n^2+1=p^2m$ we have $m\equiv n^2+1\in\{1,2,5\}\pmod8$, no prime
+$\equiv3\pmod4$ divides $m$, and $n\ge x_m$. Consecutive solutions of
+$x^2-my^2=-1$ grow by a factor $\ge g_m$, as in Lemma~\ref{lem:B}.
+\end{proof}
+
+\subsection{Bonferroni truncation and minimal witnesses}
+\begin{lemma}[Bf]
+Let $D$ be a set whose intersection with each class mod $qQ$ ($Q$ odd, coprime to $q$)
+has size in $[L/(qQ)-\mu,L/(qQ)+\mu]$, let $p_1,\dots,p_k$ be primes coprime to $q$,
+and let $E_i$ consist of $c$ classes mod $p_i^2$, $v_i=c/p_i^2$. For odd $d$, the
+number of elements of $D$ in one class mod $q$ lying in $\bigcup E_i$ is at most
+$\frac Lq\sum_{j=1}^d(-1)^{j+1}e_j(v_1,\dots,v_k)+\mu\sum_{j=1}^d\binom kjc^j$, and the
+main term is nondecreasing in the set of primes.
+\end{lemma}
+
+\emph{Minimal witnesses.} Each witness is taken to be the least element of its part,
+so the main terms may use $L=N-x+1$ in place of $N$. The witnesses are grouped into
+buckets $[x_a,x_b]$ with $x_b=\max(x_a+1,\lfloor1.3x_a\rfloor)$, and in each bucket
+$\Sigma(b)$ is replaced by a bound $\Sh(x_b)$ valid for all $b\le x_b$. When two
+witnesses sieve each other's parts, the terms can be re-paired so that each pair is
+bounded by twice the maximum over buckets.
+
+\subsection{Revised Lemma C}
+Lemma C only uses that $A^*$ lies in a domain $D$ whose classes mod odd $Q$ have
+$L_{\rm eff}/Q\pm\mu$ elements. In case II, with $b$ the least even element of $A^*$,
+$L_{\rm eff}=N-(b-1)/2$ and $\mu=2$; for an odd witness $b$ and $x\equiv b\pmod4$
+we have $xb+1\equiv2\pmod4$, which gives Lemma C$'$ on $(b+4\Z)\cap[b,N]$ with
+$L_{\rm eff}=(N-b+1)/4$. For each odd $p_2\ne5$, $\mathrm{non}(p_2)$ is the least of
+three valid bounds: truncated inclusion--exclusion without the restriction mod 25,
+full inclusion--exclusion as ``all classes minus two'', and truncated
+inclusion--exclusion class by class. (Truncated bounds are upper bounds only, so
+they cannot be used for a subtracted part.) Lemma C1 is replaced by:
+
+\begin{lemma}[C2$'$]
+If $b\le x$, $n_S=\max\{\ell: q_1\cdots q_\ell\le\sqrt{x^2+1},\ q_\ell\le z_2\}$ and
+$g(p)=\max(\mathrm{whole}(p)-\mathrm{non}(p),0)$, then
+$\sum_{p\in S_b,\,p\le z_2}(\mathrm{whole}(p)-\mathrm{non}(p))$ is at most the sum of
+the $n_S$ largest values of $g$. Equivalently, for every $\tau\ge0$ it is at most
+$n_S\tau+\sum_p\max(g(p)-\tau,0)$.
+\end{lemma}
+
+\subsection{Case analysis and certificate}
+The case analysis of Section~\ref{sec:cases} is refined (III.2 is split according
+to which of the classes $\{7,32,82\}$, $\{18,68,43\}$ are present, with two or
+three witnesses), and every bound is nondecreasing in $N$ for fixed parameters, so
+it suffices to check $\mathrm{bound}(N_{hi})<(N_{lo}-6)/25$ on each interval. An
+exact certificate (C with GMP) passes on 396 intervals covering
+$[6\times10^5,1.6\times10^8]$, with worst ratio $0.9594$; a second implementation in
+Python rationals agrees.
+
+\section{Small $N$: a checked colouring}\label{sec:small}
+
+Let $V=\{n:\mu(n^2+1)=0\}$ and let $G$ be the graph on $V$ with an edge $uv$ when
+$\mu(uv+1)=0$. Admissible sets are the cliques of $G[V\cap[1,N]]$, so it suffices
+to partition $V\cap[1,N]$ into $c_7(N)$ independent sets.
+
+We build such partitions incrementally in $n$: a new class is opened only when
+$n\equiv7\pmod{25}$, and every other vertex is placed into an existing class, if
+necessary after moving one conflicting element to another class. Every operation is
+logged, and an independent program replays the log, recomputing $V$ by a different
+sieve and squarefreeness by complete factorisation. Up to $N=4\times10^8$ this gives
+$|V|=42{,}063{,}559$ vertices in $16{,}000{,}000=c_7(4\times10^8)$ classes; both
+replays pass.
+
+\section{The Lean formalisation}\label{sec:lean}
+
+\subsection{Statement}
+The formal statement is
+\begin{alltt}\small
+def Admissible (A : Finset \(\mathbb{N}\)) : Prop :=
+  \(\forall\) a \(\in\) A, \(\forall\) b \(\in\) A, \(\neg\) Squarefree (a * b + 1)
+def c7 (N : \(\mathbb{N}\)) : \(\mathbb{N}\) := (N + 18) / 25
+def Statement (N : \(\mathbb{N}\)) : Prop :=
+  \(\forall\) A : Finset \(\mathbb{N}\), A \(\subseteq\) Finset.Icc 1 N \(\to\) Admissible A \(\to\) A.card \(\le\) c7 N
+theorem Erdos848.erdos848 : \(\forall\) N, Statement N
+\end{alltt}
+together with \lean{erdos848\_max'} (the maximum is exactly $c_7(N)$) and the form
+used by the Formal Conjectures project. \lean{\#print axioms} reports only
+\lean{propext}, \lean{Classical.choice} and \lean{Quot.sound}.
+
+\subsection{Trust}
+Every computation is a Boolean checker evaluated by \lean{decide +kernel}. No
+\lean{native\_decide} is used, so neither the compiler nor the interpreter is
+trusted. The data (interval parameters, bucket bounds, witness structures, colouring
+operations) are produced by untrusted programs; the kernel checks the data, and for
+each checker a soundness theorem connects its output to the real bounds of the
+lemmas above. As an independent check, \lean{leanchecker}, which is shipped with
+Lean, re-checks the declarations of each module of the project in the kernel,
+module by module; every module that contains declarations passes. The split in Lean is:
+\begin{itemize}[leftmargin=*]
+\item $N\le986{,}746$: the colouring, replayed by the kernel;
+\item $986{,}747\le N\le1.6\times10^8$: Section~\ref{sec:strong}, 346 intervals,
+  worst ratio $0.9306$;
+\item $N\ge1.6\times10^8$: Section~\ref{sec:large}, 2913 certificate rows and the tail.
+\end{itemize}
+
+\subsection{Kernel arithmetic}
+\begin{itemize}[leftmargin=*]
+\item \emph{Primes.} For $n<4473^2$, $n$ is prime iff $\gcd(n,\prod_{p\le4472}p)=1$.
+  The prime counts and the sums $\sum\lceil10^{30}/p^2\rceil$ at the 10{,}998 points
+  needed below $2\times10^7$ are verified by binary-split segment sums. Lookups use
+  a search tree written as a literal and checked against the table by one in-order
+  traversal.
+\item \emph{Squarefreeness} for $n<10007^3$: with $g=\gcd(n,\prod_{p\le10^4}p)$,
+  $n$ is squarefree if $\gcd(g,n/g)=1$ and $n/g$ is not a square $>1$.
+\item \emph{Lemma C in fixed point.} The sums over the primes $p\le z_2$ are computed
+  with scale $2^{40}$; per-prime constants are rounded once, up, or down where they
+  are subtracted, and each bucket then needs only natural-number arithmetic. The
+  threshold $\tau$ of Lemma C2$'$ is the $n_S$-th largest rounded gain; any
+  $\tau\ge0$ is sound. Exact rational sums would involve denominators that are
+  products of many prime squares; avoiding them made the evaluation of Lemma C
+  about 50 times faster and cut the memory of an interval check by an order of
+  magnitude.
+\item \emph{The table of Lemma E2} is restricted to the 268 entries with period
+  $P\le3000$, and each $\beta_P$ is verified over one period; witness structures
+  distinguish odd prime factors $\le23$.
+\item \emph{The colouring} for $N\le986{,}746$: an untrusted first-fit proposer with
+  augmenting moves emits 117{,}389 operations (open a class, place a vertex, move a
+  vertex). The kernel replays them on classes stored in a binary tree of depth 16,
+  in 40 windows whose end states are compared with tree-literal checkpoints. The
+  vertex set is certified by roots of $x^2\equiv-1\pmod{p^2}$ for every prime
+  $p\equiv1\pmod4$, $p\le986{,}746$, together with a proof that these are all such
+  primes.
+\end{itemize}
+
+\subsection{Cost}
+The kernel keeps every reduction of a declaration until the declaration is checked,
+so large checks are split into many declarations and reassembled by small lemmas.
+A full build takes about five CPU hours (about one hour on a 20-core machine). The
+peak memory per module is at most $3.5$~GB for an interval of
+Section~\ref{sec:strong}, at most $9.3$~GB for a colouring window, and at most
+$7.6$~GB otherwise.
+
+\section{Reproducibility}
+All code, certificates and the Lean project are in the accompanying repository,
+\url{https://github.com/MacchaCat/erdos848}.
+The certificates of Sections~\ref{sec:large} and~\ref{sec:strong} can be re-checked
+with the exact Python and C programs; the colouring logs up to $4\times10^8$ are
+published with SHA-256 checksums; and \lean{lake build} in the Lean project
+re-checks everything in the kernel.
+
+\section*{Disclosure and review status}
+The proof, the code and the Lean formalisation were produced mainly by an AI
+system (Claude, Anthropic), under the direction of the author, who set the goals and
+chose the directions, with a small number of manual interventions. The written
+argument went through several rounds of AI review and an independent
+re-implementation of all bounds from the text alone; the issues found were fixed.
+The complete argument is checked by the Lean kernel. The mathematics has not yet
+been reviewed by human experts, and readers should also check that the formal
+statement above is the intended one.
+
+This manuscript is released under the Creative Commons Attribution 4.0
+International licence (CC BY 4.0); the code and the Lean project are released
+under the Apache License 2.0.
+
+\begin{thebibliography}{9}
+\bibitem{EP848} T.~F.~Bloom, \emph{Erd\H{o}s Problem \#848},
+  \url{https://www.erdosproblems.com/848}.
+\bibitem{Sawhney} M.~Sawhney, note on Erd\H{o}s Problem \#848,
+  \url{https://www.math.columbia.edu/~msawhney/Problem_848.pdf}.
+\bibitem{AI2511} arXiv:2511.16072, Section~IV.1.
+\bibitem{Li} A.~C.~Li, \emph{The Exact Extremal Bound in Erd\H{o}s Problem 848},
+  August 2026, \url{https://ssrn.com/abstract=7230480}.
+\bibitem{LiRepo} A.~C.~Li, \emph{erdos-848-squarefree-product},
+  \url{https://github.com/crabsatellite/erdos-848-squarefree-product}.
+\bibitem{Lean} L.~de~Moura and S.~Ullrich, \emph{The Lean 4 theorem prover and
+  programming language}, CADE-28, LNCS 12699 (2021), 625--635.
+\bibitem{Mathlib} The mathlib Community, \emph{The Lean mathematical library},
+  CPP 2020, 367--381.
+\end{thebibliography}
+
+\end{document}

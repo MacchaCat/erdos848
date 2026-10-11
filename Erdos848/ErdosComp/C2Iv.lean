@@ -1,0 +1,104 @@
+import ErdosComp.C2Iv.I00
+import ErdosComp.C2Iv.I01
+import ErdosComp.C2Iv.I02
+import ErdosComp.C2Iv.I03
+import ErdosComp.C2Iv.I04
+import ErdosComp.C2Iv.I05
+import ErdosComp.C2Iv.I06
+import ErdosComp.C2Iv.I07
+import ErdosComp.C2Iv.I08
+import ErdosComp.C2Iv.I09
+import ErdosComp.C2Iv.I10
+
+namespace ErdosComp
+
+def ivsAll : List Iv2 :=
+  ivs0 ++
+  ivs1 ++
+  ivs2 ++
+  ivs3 ++
+  ivs4 ++
+  ivs5 ++
+  ivs6 ++
+  ivs7 ++
+  ivs8 ++
+  ivs9 ++
+  ivs10 ++
+  ivs11 ++
+  ivs12 ++
+  ivs13 ++
+  ivs14 ++
+  ivs15 ++
+  ivs16 ++
+  ivs17 ++
+  ivs18 ++
+  ivs19 ++
+  ivs20 ++
+  ivs21 ++
+  ivs22 ++
+  ivs23 ++
+  ivs24 ++
+  ivs25 ++
+  ivs26 ++
+  ivs27 ++
+  ivs28 ++
+  ivs29 ++
+  ivs30 ++
+  ivs31 ++
+  ivs32 ++
+  ivs33 ++
+  ivs34 ++
+  ivs35 ++
+  ivs36 ++
+  ivs37 ++
+  ivs38 ++
+  ivs39 ++
+  ivs40 ++
+  ivs41 ++
+  ivs42 ++
+  ivs43 ++
+  ivs44 ++
+  ivs45 ++
+  ivs46 ++
+  ivs47 ++
+  ivs48 ++
+  ivs49 ++
+  ivs50 ++
+  ivs51 ++
+  ivs52 ++
+  ivs53 ++
+  ivs54 ++
+  ivs55 ++
+  ivs56 ++
+  ivs57 ++
+  ivs58 ++
+  ivs59 ++
+  ivs60 ++
+  ivs61 ++
+  ivs62 ++
+  ivs63 ++
+  ivs64 ++
+  ivs65 ++
+  ivs66 ++
+  ivs67 ++
+  ivs68 ++
+  ivs69 ++
+  ivs70 ++
+  ivs71 ++
+  ivs72 ++
+  ivs73 ++
+  ivs74 ++
+  ivs75 ++
+  ivs76 ++
+  ivs77 ++
+  ivs78 ++
+  ivs79 ++
+  ivs80 ++
+  ivs81 ++
+  ivs82 ++
+  ivs83 ++
+  ivs84 ++
+  ivs85 ++
+  ivs86
+
+end ErdosComp
